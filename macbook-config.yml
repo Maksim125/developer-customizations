@@ -23,6 +23,7 @@
       - { name: "Docker", cask: "docker" }
       - { name: "MiddleClick", cask: "middleclick" }
       - { name: "DBeaver Community Edition", cask: "dbeaver-community" }
+      - { name: "Rectangle", cask: "rectangle" }
 
     cursor_extensions:
       - ms-python.python
@@ -84,6 +85,7 @@
         greedy: false
       when: not item.stat.exists
       loop: "{{ app_check.results }}"
+      register: cask_install_result
 
     ##################################################
     #            Languages Setup                     #
@@ -143,6 +145,13 @@
       register: add_login_item
       changed_when: add_login_item.rc != 0
       failed_when: add_login_item.rc != 0 and "already exists" not in add_login_item.stderr
+
+    - name: Add Rectangle to login items
+      ansible.builtin.shell: |
+        osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Rectangle.app", hidden:false}'
+      register: add_rectangle_login_item
+      changed_when: add_rectangle_login_item.rc != 0
+      failed_when: add_rectangle_login_item.rc != 0 and "already exists" not in add_rectangle_login_item.stderr
 
     ##################################################
     #                Cursor IDE Setup                #
