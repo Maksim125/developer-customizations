@@ -1,0 +1,189 @@
+---
+- name: Setup Development Environment
+  hosts: localhost
+  become: no
+
+  vars:
+    brew_packages:
+      - docker
+      - miniconda
+      - rustup-init
+      - go
+      - dotnet-sdk
+      - ocaml
+      - opam
+      - google-cloud-sdk
+      - terraform
+      - zsh-autocomplete
+      - awscli
+      - dune
+      - llvm
+
+    cask_apps:
+      - { name: "Docker", cask: "docker" }
+      - { name: "MiddleClick", cask: "middleclick" }
+      - { name: "DBeaver Community Edition", cask: "dbeaver-community" }
+
+    cursor_extensions:
+      - ms-python.python
+      - donjayamanne.python-extension-pack
+      - kevinrose.vsc-python-indent
+      - ms-vscode.cpptools
+      - ms-vscode.cpptools-extension-pack
+      - streetsidesoftware.code-spell-checker
+      - vadimcn.vscode-lldb
+      - serayuzgur.crates
+      - anysphere.pyright
+      - ms-vscode-remote.remote-containers
+      - ms-azuretools.vscode-docker
+      - github.vscode-github-actions
+      - github.copilot
+      - gitlab.gitlab-workflow
+      - golang.go
+      - hashicorp.terraform
+      - visualstudioexptteam.vscodeintellicode
+      - wholroyd.jinja
+      - ms-toolsai.jupyter
+      - ms-toolsai.vscode-jupyter-cell-tags
+      - ms-toolsai.jupyter-keymap
+      - ms-toolsai.jupyter-renderers
+      - ms-toolsai.vscode-jupyter-slideshow
+      - james-yu.latex-workshop
+      - william-voyek.vscode-nginx
+      - ocamllabs.ocaml-platform
+      - 1yib.rust-bundle
+      - dustypomerleau.rust-syntax
+      - rust-lang.rust-analyzer
+      - emeryberger.scalene
+      - juanblanco.solidity
+      - svelte.svelte-vscode
+      - redhat.vscode-yaml
+  tasks:
+    - name: Append custom configurations to .zshrc
+      ansible.builtin.blockinfile:
+        path: ~/.zshrc
+        block: "{{ lookup('file', 'config/zshrc-appends.sh') }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - Custom commands"
+        insertafter: EOF
+
+    - name: Install Homebrew packages
+      community.general.homebrew:
+        name: "{{ brew_packages }}"
+        state: present
+
+    - name: Check for existing cask applications
+      ansible.builtin.stat:
+        path: "/Applications/{{ item.name }}.app"
+      register: app_check
+      loop: "{{ cask_apps }}"
+
+    - name: Install Homebrew cask packages
+      community.general.homebrew_cask:
+        name: "{{ item.item.cask }}"
+        state: present
+        greedy: false
+      when: not item.stat.exists
+      loop: "{{ app_check.results }}"
+
+    ##################################################
+    #            Languages Setup                     #
+    ##################################################
+
+    - name: Initialize rustup
+      ansible.builtin.command: rustup-init -y --no-modify-path
+      args:
+        creates: ~/.cargo/bin/rustc
+
+    - name: Add Rust to PATH in .zshrc
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        line: "export PATH=$PATH:$HOME/.cargo/bin"
+        state: present
+
+    - name: Add OCaml opam to .zshrc
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        line: "eval $(opam env)"
+        state: present
+
+    ##################################################
+    #            Cloud Tools Setup                   #
+    ##################################################
+
+    - name: Add Google Cloud SDK to .zshrc
+      ansible.builtin.blockinfile:
+        path: ~/.zshrc
+        block: |
+          # The next line updates PATH for the Google Cloud SDK.
+          if [ -f '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.zsh.inc' ]; then . '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.zsh.inc'; fi
+
+          # The next line enables shell command completion for gcloud.
+          if [ -f '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/completion.zsh.inc' ]; then . '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/completion.zsh.inc'; fi
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - Google Cloud SDK"
+        state: present
+
+    - name: Add AWS CLI shell completion to .zshrc
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        line: 'complete -C "/usr/local/bin/aws_completer" aws'
+        state: present
+
+    ##################################################
+    #            Productivity tools                  #
+    ##################################################
+
+    - name: Configure middleclick for tap to click
+      ansible.builtin.command: defaults write com.matthewlunsford.MiddleClick TapToClick -bool true
+      register: middleclick_config
+      changed_when: middleclick_config.rc != 0
+
+    - name: Add MiddleClick to login items
+      ansible.builtin.shell: |
+        osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/MiddleClick.app", hidden:false}'
+      register: add_login_item
+      changed_when: add_login_item.rc != 0
+      failed_when: add_login_item.rc != 0 and "already exists" not in add_login_item.stderr
+
+    ##################################################
+    #                Cursor IDE Setup                #
+    ##################################################
+
+    - name: Check if Cursor is installed
+      ansible.builtin.command: cursor -v
+      register: cursor_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install Cursor if not present
+      community.general.homebrew_cask:
+        name: cursor
+        state: present
+      when: cursor_version.rc != 0
+
+    - name: Get list of installed Cursor extensions
+      ansible.builtin.command: cursor --list-extensions
+      register: installed_extensions
+      changed_when: false
+
+    - name: Install Cursor extensions
+      ansible.builtin.command: cursor --install-extension {{ item }}
+      loop: "{{ cursor_extensions }}"
+      when: item not in installed_extensions.stdout_lines
+
+    - name: Ensure Cursor settings directory exists
+      ansible.builtin.file:
+        path: "~/Library/Application Support/Cursor/User"
+        state: directory
+        mode: "0755"
+
+    - name: Check if custom settings.json exists
+      ansible.builtin.stat:
+        path: "config/cursor-settings.json"
+      register: custom_settings
+
+    - name: Copy custom settings.json to Cursor config directory
+      ansible.builtin.copy:
+        src: "config/cursor-settings.json"
+        dest: "~/Library/Application Support/Cursor/User/settings.json"
+        mode: "0644"
+      when: custom_settings.stat.exists
