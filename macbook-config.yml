@@ -178,6 +178,7 @@
       ansible.builtin.command: cursor --install-extension {{ item }}
       loop: "{{ cursor_extensions }}"
       when: item not in installed_extensions.stdout_lines
+      ignore_errors: yes
 
     - name: Ensure Cursor settings directory exists
       ansible.builtin.file:
