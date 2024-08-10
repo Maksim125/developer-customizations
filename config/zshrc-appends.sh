@@ -9,6 +9,8 @@
 
 # CMD autocompletes
 source /opt/homebrew/share/zsh-autocomplete/zsh-autocomplete.plugin.zsh
+# Git
+eval "$(scmpuff init --shell=sh)"
 
 # Full path in zsh
 PROMPT='%F{green}%~%f %# '

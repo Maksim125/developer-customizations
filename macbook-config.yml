@@ -18,6 +18,7 @@
       - awscli
       - dune
       - llvm
+      - scmpuff
 
     cask_apps:
       - { name: "Docker", cask: "docker" }
